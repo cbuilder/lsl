@@ -4,6 +4,20 @@
 #include <sys/types.h>
 #include <dirent.h>
 
+enum filetype
+  {
+    unknown,
+    fifo,
+    chardev,
+    directory,
+    blockdev,
+    normal,
+    symbolic_link,
+    sock,
+    whiteout,
+    arg_directory
+};
+
 int opt_filter_pass(char *name)
 {
 	return name[0] == '.' ? 0 : 1;
@@ -16,9 +30,33 @@ void lsl(const char *path)
 	printf("%s:\ntotal %d\n", path, 5);
 	dir = opendir(path);
 	while ((entry = readdir(dir)) != NULL) {
-		if (opt_filter_pass(entry->d_name))
+		if (opt_filter_pass(entry->d_name)) {
+			switch(entry->d_type) {
+				case unknown:
+				case fifo:
+				case sock:
+				case arg_directory:
+					break;
+				case whiteout:
+					printf("-");
+					break;
+				case chardev:
+					printf("c");
+					break;
+				case directory:
+					printf("d");
+					break;
+				case normal:
+					printf("-");
+					break;
+				case symbolic_link:
+					printf("l");
+					break;
+			}
 			printf("%d %s\n", entry->d_type, entry->d_name);
+		}
 	}
+	closedir(dir);
 	printf("\n");
 }
 
