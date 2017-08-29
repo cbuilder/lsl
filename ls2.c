@@ -23,6 +23,32 @@ int opt_filter_pass(char *name)
 	return name[0] == '.' ? 0 : 1;
 }
 
+void pperm(int dtype)
+{
+	switch(dtype) {
+		case unknown:
+		case fifo:
+		case sock:
+		case arg_directory:
+			break;
+		case whiteout:
+			printf("-");
+			break;
+		case chardev:
+			printf("c");
+			break;
+		case directory:
+			printf("d");
+			break;
+		case normal:
+			printf("-");
+			break;
+		case symbolic_link:
+			printf("l");
+			break;
+	}
+}
+
 void lsl(const char *path)
 {
 	DIR *dir;
@@ -31,28 +57,7 @@ void lsl(const char *path)
 	dir = opendir(path);
 	while ((entry = readdir(dir)) != NULL) {
 		if (opt_filter_pass(entry->d_name)) {
-			switch(entry->d_type) {
-				case unknown:
-				case fifo:
-				case sock:
-				case arg_directory:
-					break;
-				case whiteout:
-					printf("-");
-					break;
-				case chardev:
-					printf("c");
-					break;
-				case directory:
-					printf("d");
-					break;
-				case normal:
-					printf("-");
-					break;
-				case symbolic_link:
-					printf("l");
-					break;
-			}
+			pperm(entry->d_type);
 			printf("%d %s\n", entry->d_type, entry->d_name);
 		}
 	}
