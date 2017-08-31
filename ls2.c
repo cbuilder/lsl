@@ -4,34 +4,19 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <time.h>
 
 static int is_hidden(char *name)
 {
-	return name[0] == '.' ? 0 : 1;
+	return name[0] == '.' ? 1 : 0;
 }
-#if 0
-void lsl(const char *path)
-{
-	DIR *dir;
-	struct dirent *entry;
-	printf("%s:\ntotal %d\n", path, 5);
-	dir = opendir(path);
-	while ((entry = readdir(dir)) != NULL) {
-		if (is_hidden(entry->d_name)) {
-			pperm(entry->d_type);
-			printf("%d %s\n", entry->d_type, entry->d_name);
-		}
-	}
-	closedir(dir);
-	printf("\n");
-}
-#endif
+
 static void p_nosuchfile(char *name)
 {
 	printf("ls: cannot access %s: No such file or directory\n", name);
 }
 
-static void p_file_stat(struct stat *s)
+static void p_rights(struct stat *s)
 {
 	char modestr[11] = "----------";
 	mode_t m = s->st_mode;
@@ -75,7 +60,58 @@ static void p_file_stat(struct stat *s)
 	default:
 		break;
 	}
-	printf("%s\n", modestr);
+	printf("%s ", modestr);
+}
+
+static void p_links(struct stat *s)
+{
+	printf("%lu ", s->st_nlink);
+}
+
+static void p_usrown(struct stat *s)
+{
+	printf("%d ", s->st_uid);
+}
+
+static void p_grpown(struct stat *s)
+{
+	printf("%d ", s->st_gid);
+}
+
+static void p_size(struct stat *s)
+{
+	printf("%lu ", s->st_size);
+}
+
+static void p_timestamp(struct stat *s)
+{
+	struct tm *lt = localtime(&s->st_mtime);
+	printf(" %s", asctime(lt));
+}
+
+static void print_about_file(const char* name, struct stat *s)
+{
+	p_rights(s);
+	p_links(s);
+	p_usrown(s);
+	p_grpown(s);
+	p_size(s);
+	//p_timestamp(s);
+	printf(" %s\n", name);
+}
+
+static void print_about_dir(struct stat *s)
+{
+	printf("total %lld\n", (long long)s->st_blocks);
+}
+
+static struct dirent ** add_list_direntry(struct dirent **entries, struct dirent *entry)
+{	
+	static unsigned entnum;
+	printf("%d ", entnum);
+	entries = realloc(entries, sizeof(struct dirent *));
+	entries[entnum++] = entry;
+	return 0;
 }
 
 static int ls2(const char *path)
@@ -83,13 +119,33 @@ static int ls2(const char *path)
 	struct stat filestat;
 	DIR *dir;
 	struct dirent *entry;
+	unsigned int entnum = 0, i = 0;
+	struct dirent **entries = NULL;
+	unsigned long blocks = 0;
 
 	if (lstat(path, &filestat) < 0)
 		return -1;
+
 	if (S_ISDIR(filestat.st_mode)) {
-		printf("total %lld\n", (long long)filestat.st_blocks);
+		print_about_dir(&filestat);
+		dir = opendir(path);
+		while ((entry = readdir(dir)) != NULL) {
+			if (!is_hidden(entry->d_name)) {
+				printf("aaa ");
+				entries = add_list_direntry(entries, entry);
+				//lstat(entry->d_name, &filestat);
+				//blocks += (filestat.st_blocks);
+				entnum++;
+				//print_about_file(entry->d_name, &filestat);
+			}
+		}
+		//printf("total=%lu\n", blocks/2);
+		closedir(dir);
+		for (i = 0; i < entnum; i++)
+			printf("%s ", entries[i]->d_name);
+		//print_about_dir(path, &filestat);
 	} else {
-		p_file_stat(&filestat);
+		print_about_file(path, &filestat);
 	}
 }
 
@@ -101,7 +157,9 @@ int main(int argc, char **argv)
 	} else {
 		for (i = argc-1; i > 0; i--) {
 			if (-1 == ls2(argv[i])) {
-				p_nosuchfile(argv[i]);
+				printf("%s: cannot access %s:"
+				"No such file or directory\n", \
+				argv[0], argv[i]);
 			}
 		}
 	}
