@@ -5,15 +5,12 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include <time.h>
+#include <pwd.h>
+#include <grp.h>
 
 static int is_hidden(char *name)
 {
 	return name[0] == '.' ? 1 : 0;
-}
-
-static void p_nosuchfile(char *name)
-{
-	printf("ls: cannot access %s: No such file or directory\n", name);
 }
 
 static void p_rights(struct stat *s)
@@ -70,12 +67,14 @@ static void p_links(struct stat *s)
 
 static void p_usrown(struct stat *s)
 {
-	printf("%d ", s->st_uid);
+	struct passwd *pwd = getpwuid(s->st_uid);
+	printf("%s ", pwd->pw_name);
 }
 
 static void p_grpown(struct stat *s)
 {
-	printf("%d ", s->st_gid);
+	struct group *grp = getgrgid(s->st_gid);
+	printf("%s ", grp->gr_name);
 }
 
 static void p_size(struct stat *s)
@@ -101,81 +100,50 @@ static void print_about_file(const char* name, struct stat *s)
 	printf(" %s\n", name);
 }
 
-static void print_about_dir(struct stat *s)
-{
-	printf("total %lld\n", (long long)s->st_blocks);
-}
-
-static struct dirent ** pdirent_array_alloc(struct dirent **ents, DIR *dirp)
-{
-	unsigned long filcnt = 0;
-	struct dirent *entry;
-	while ((entry = readdir(dirp)) != NULL)
-		if (!is_hidden(entry->d_name))
-         		filcnt++;
-	rewinddir(dirp);
-	ents = calloc(sizeof(entry), filcnt);
-	printf("%lu files\n", filcnt);
-	return ents;
-}
-
-static unsigned add_list_direntry(struct dirent **entries, struct dirent *entry)
-{	
-	static unsigned entnum;
-	entries[entnum++] = entry;
-	return entnum;
-}
-
-static int tcompar(const void *p1, const void *p2)
-{
-	struct stat filestat1;
-	struct stat filestat2;
-	struct dirent *entry1 = *(struct dirent **)p1;
-	struct dirent *entry2 = *(struct dirent **)p2;
-	
-	lstat(entry1->d_name, &filestat1);
-	lstat(entry2->d_name, &filestat2);
-	printf(" %s %lu\n", entry1->d_name, filestat1.st_mtime);
-	printf(" %s %lu\n", entry2->d_name, filestat2.st_mtime);
-	if (filestat1.st_mtime >= filestat2.st_mtime)
-		return 1;
-	else
-		return -1;
-}
+static unsigned max_links;
+static unsigned max_user;
+static unsigned max_group;
+static unsigned max_size;
+static unsigned max_date;
 
 static int ls2(const char *path)
 {
-	struct stat filestat;
 	DIR *dir;
 	struct dirent *entry;
-	unsigned int entnum = 0, i = 0;
-	struct dirent **entries = NULL;
+	struct stat fs;
 	unsigned long blocks = 0;
 
-	if (lstat(path, &filestat) < 0)
+	if (lstat(path, &fs) < 0)
 		return -1;
 
-	if (S_ISDIR(filestat.st_mode)) {
-		print_about_dir(&filestat);
+	if (S_ISDIR(fs.st_mode)) {
 		dir = opendir(path);
-		entries = pdirent_array_alloc(entries, dir);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				entnum = add_list_direntry(entries, entry);
-				lstat(entry->d_name, &filestat);
-				blocks += (filestat.st_blocks);
+				lstat(entry->d_name, &fs);
+				blocks += (fs.st_blocks);
+				if (fs.st_nlink > max_links)
+					max_links = fs.st_nlink;
+				if (strlen(getpwuid(fs.st_uid)->pw_name) > max_user)
+					max_user = strlen(getpwuid(fs.st_uid)->pw_name);
+				if (strlen(getgrgid(fs.st_gid)->gr_name) > max_group)
+					max_group = strlen(getgrgid(fs.st_gid)->gr_name);
+			}
+		}
+		printf("total %lu\n", blocks*512/1024);
+		printf("max_links = %u, max_user = %u, max_group = %u\n", max_links, max_user, max_group);
+		rewinddir(dir);
+		while ((entry = readdir(dir)) != NULL) {
+			if (!is_hidden(entry->d_name)) {
+				lstat(entry->d_name, &fs);
+				print_about_file(entry->d_name, &fs);
 			}
 		}
 		closedir(dir);
-		printf("total %lu\n", blocks*512/1024);
-		qsort(entries, entnum, sizeof(entries[0]), tcompar);
-		for (i = 0; i < entnum; i++) {
-			lstat(entries[i]->d_name, &filestat);
-			print_about_file(entries[i]->d_name, &filestat);
-		}
 	} else {
-		print_about_file(path, &filestat);
+		print_about_file(path, &fs);
 	}
+	return 0;
 }
 
 int main(int argc, char **argv)
