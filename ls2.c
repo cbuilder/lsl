@@ -85,8 +85,9 @@ static void p_size(struct stat *s)
 
 static void p_timestamp(struct stat *s)
 {
-	struct tm *lt = localtime(&s->st_mtime);
-	printf(" %s", asctime(lt));
+	//struct tm *lt = localtime(&s->st_mtime);
+	//printf(" %s", asctime(lt));
+	printf(" %lu", s->st_mtime);
 }
 
 static void print_about_file(const char* name, struct stat *s)
@@ -96,7 +97,7 @@ static void print_about_file(const char* name, struct stat *s)
 	p_usrown(s);
 	p_grpown(s);
 	p_size(s);
-	//p_timestamp(s);
+	p_timestamp(s);
 	printf(" %s\n", name);
 }
 
@@ -121,9 +122,25 @@ static struct dirent ** pdirent_array_alloc(struct dirent **ents, DIR *dirp)
 static unsigned add_list_direntry(struct dirent **entries, struct dirent *entry)
 {	
 	static unsigned entnum;
-	entries = realloc(entries, sizeof(struct dirent *));
 	entries[entnum++] = entry;
 	return entnum;
+}
+
+static int tcompar(const void *p1, const void *p2)
+{
+	struct stat filestat1;
+	struct stat filestat2;
+	struct dirent *entry1 = *(struct dirent **)p1;
+	struct dirent *entry2 = *(struct dirent **)p2;
+	
+	lstat(entry1->d_name, &filestat1);
+	lstat(entry2->d_name, &filestat2);
+	printf(" %s %lu\n", entry1->d_name, filestat1.st_mtime);
+	printf(" %s %lu\n", entry2->d_name, filestat2.st_mtime);
+	if (filestat1.st_mtime >= filestat2.st_mtime)
+		return 1;
+	else
+		return -1;
 }
 
 static int ls2(const char *path)
@@ -149,9 +166,9 @@ static int ls2(const char *path)
 				blocks += (filestat.st_blocks);
 			}
 		}
-		printf("total %lu\n", blocks*512/1024);
 		closedir(dir);
-		//qsort
+		printf("total %lu\n", blocks*512/1024);
+		qsort(entries, entnum, sizeof(entries[0]), tcompar);
 		for (i = 0; i < entnum; i++) {
 			lstat(entries[i]->d_name, &filestat);
 			print_about_file(entries[i]->d_name, &filestat);
