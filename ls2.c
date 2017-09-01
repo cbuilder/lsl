@@ -105,13 +105,25 @@ static void print_about_dir(struct stat *s)
 	printf("total %lld\n", (long long)s->st_blocks);
 }
 
-static struct dirent ** add_list_direntry(struct dirent **entries, struct dirent *entry)
+static struct dirent ** pdirent_array_alloc(struct dirent **ents, DIR *dirp)
+{
+	unsigned long filcnt = 0;
+	struct dirent *entry;
+	while ((entry = readdir(dirp)) != NULL)
+		if (!is_hidden(entry->d_name))
+         		filcnt++;
+	rewinddir(dirp);
+	ents = calloc(sizeof(entry), filcnt);
+	printf("%lu files\n", filcnt);
+	return ents;
+}
+
+static unsigned add_list_direntry(struct dirent **entries, struct dirent *entry)
 {	
 	static unsigned entnum;
-	printf("%d ", entnum);
 	entries = realloc(entries, sizeof(struct dirent *));
 	entries[entnum++] = entry;
-	return 0;
+	return entnum;
 }
 
 static int ls2(const char *path)
@@ -129,21 +141,21 @@ static int ls2(const char *path)
 	if (S_ISDIR(filestat.st_mode)) {
 		print_about_dir(&filestat);
 		dir = opendir(path);
+		entries = pdirent_array_alloc(entries, dir);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				printf("aaa ");
-				entries = add_list_direntry(entries, entry);
-				//lstat(entry->d_name, &filestat);
-				//blocks += (filestat.st_blocks);
-				entnum++;
-				//print_about_file(entry->d_name, &filestat);
+				entnum = add_list_direntry(entries, entry);
+				lstat(entry->d_name, &filestat);
+				blocks += (filestat.st_blocks);
 			}
 		}
-		//printf("total=%lu\n", blocks/2);
+		printf("total %lu\n", blocks*512/1024);
 		closedir(dir);
-		for (i = 0; i < entnum; i++)
-			printf("%s ", entries[i]->d_name);
-		//print_about_dir(path, &filestat);
+		//qsort
+		for (i = 0; i < entnum; i++) {
+			lstat(entries[i]->d_name, &filestat);
+			print_about_file(entries[i]->d_name, &filestat);
+		}
 	} else {
 		print_about_file(path, &filestat);
 	}
