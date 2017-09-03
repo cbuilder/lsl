@@ -4,9 +4,17 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <unistd.h>
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
+
+static unsigned max_links = 1;
+static unsigned max_user = 1;
+static unsigned max_group = 1;
+static unsigned max_size = 1;
+
+const char month[12][11] = {"янв. ", "фев. ", "марта", "апр. ", "мая  ", "июня ", "июля ", "авг. ", "сент.", "окт. ", "нояб.", "дек. "};
 
 static int is_hidden(char *name)
 {
@@ -52,41 +60,57 @@ static void p_rights(struct stat *s)
 		else if (S_ISGID & m) modestr[3] = 's';
 		break;
 	case S_IFSOCK:
-		sprintf(modestr, "s");
+		modestr[0] = 's';
 		break;
 	default:
 		break;
 	}
-	printf("%s ", modestr);
+	printf("%s", modestr);
 }
 
 static void p_links(struct stat *s)
 {
-	printf("%lu ", s->st_nlink);
+	char buf[256] = "";
+	int l = sprintf(buf, "%lu", s->st_nlink);
+	printf("%*c%s" , max_links - l + 1, ' ', buf);
 }
 
 static void p_usrown(struct stat *s)
 {
+	char buf[256] = "";
 	struct passwd *pwd = getpwuid(s->st_uid);
-	printf("%s ", pwd->pw_name);
+	int l = sprintf(buf, "%s", pwd->pw_name);
+	printf(" %s%*c" , buf, max_user - l + 1, ' ');
+
 }
 
 static void p_grpown(struct stat *s)
 {
+	char buf[256] = "";
 	struct group *grp = getgrgid(s->st_gid);
-	printf("%s ", grp->gr_name);
+	int l = sprintf(buf, "%s", grp->gr_name);
+	printf("%s%*c" , buf, max_group - l + 1, ' ');
 }
 
 static void p_size(struct stat *s)
 {
-	printf("%lu ", s->st_size);
+	char buf[256] = "";
+	int l = sprintf(buf, "%lu", s->st_size);
+	printf("%*c%s" , max_size - l + 1, ' ', buf);
 }
 
-static void p_timestamp(struct stat *s)
+static void p_ls_time(time_t *mtime)
 {
-	//struct tm *lt = localtime(&s->st_mtime);
-	//printf(" %s", asctime(lt));
-	printf(" %lu", s->st_mtime);
+	time_t tt;
+	tt = time(&tt);
+	struct tm *lt = localtime(mtime);
+	struct tm now;
+	localtime_r(&tt, &now);
+	printf(" %s %2d ", month[lt->tm_mon], lt->tm_mday);
+	if (now.tm_year == lt->tm_year)
+		printf("%02d:%02d", lt->tm_hour, lt->tm_min);
+	else
+		printf(" %u", lt->tm_year + 1900);
 }
 
 static void print_about_file(const char* name, struct stat *s)
@@ -96,15 +120,32 @@ static void print_about_file(const char* name, struct stat *s)
 	p_usrown(s);
 	p_grpown(s);
 	p_size(s);
-	p_timestamp(s);
-	printf(" %s\n", name);
+	p_ls_time(&s->st_mtime);
+	printf(" %s", name);
+	if (S_ISLNK(s->st_mode)) {
+		char buf[256] = "";
+		readlink(name, buf, 255);
+		printf(" -> %s\n", buf);
+	} else {
+		printf("\n");
+	}
 }
 
-static unsigned max_links;
-static unsigned max_user;
-static unsigned max_group;
-static unsigned max_size;
-static unsigned max_date;
+void count_columns(struct dirent *entry, struct stat *fs)
+{
+	size_t l;
+	char buf[256] = "";
+	l = sprintf(buf, "%lu", fs->st_nlink);
+	if (l > max_links)
+		max_links = l;
+	if (strlen(getpwuid(fs->st_uid)->pw_name) > max_user)
+		max_user = strlen(getpwuid(fs->st_uid)->pw_name);
+	if (strlen(getgrgid(fs->st_gid)->gr_name) > max_group)
+		max_group = strlen(getgrgid(fs->st_gid)->gr_name);
+	l = sprintf(buf, "%lu", fs->st_size);
+	if (l > max_size)
+		max_size = l;
+}
 
 static int ls2(const char *path)
 {
@@ -120,22 +161,17 @@ static int ls2(const char *path)
 		dir = opendir(path);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				lstat(entry->d_name, &fs);
+				fstatat(dirfd(dir), entry->d_name, &fs, 0);
 				blocks += (fs.st_blocks);
-				if (fs.st_nlink > max_links)
-					max_links = fs.st_nlink;
-				if (strlen(getpwuid(fs.st_uid)->pw_name) > max_user)
-					max_user = strlen(getpwuid(fs.st_uid)->pw_name);
-				if (strlen(getgrgid(fs.st_gid)->gr_name) > max_group)
-					max_group = strlen(getgrgid(fs.st_gid)->gr_name);
+				count_columns(entry, &fs);
 			}
 		}
 		printf("total %lu\n", blocks*512/1024);
-		printf("max_links = %u, max_user = %u, max_group = %u\n", max_links, max_user, max_group);
+		printf("max_links = %u, max_user = %u, max_group = %u, max_size= %u\n", max_links, max_user, max_group, max_size);
 		rewinddir(dir);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				lstat(entry->d_name, &fs);
+				fstatat(dirfd(dir), entry->d_name, &fs, 0);
 				print_about_file(entry->d_name, &fs);
 			}
 		}
