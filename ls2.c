@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#include <unistd.h>
 #include <time.h>
 #include <pwd.h>
 #include <grp.h>
@@ -113,7 +114,7 @@ static void p_ls_time(time_t *mtime)
 		printf(" %u", lt->tm_year + 1900);
 }
 
-static void print_about_file(const char* name, struct stat *s)
+static void print_about_file(int dfd, const char* name, struct stat *s)
 {
 	p_rights(s);
 	p_links(s);
@@ -124,7 +125,7 @@ static void print_about_file(const char* name, struct stat *s)
 	printf(" %s", name);
 	if (S_ISLNK(s->st_mode)) {
 		char buf[256] = "";
-		readlink(name, buf, 255);
+		readlinkat(dfd, name, buf, 255);
 		printf(" -> %s\n", buf);
 	} else {
 		printf("\n");
@@ -153,31 +154,32 @@ static int ls2(const char *path)
 	struct dirent *entry;
 	struct stat fs;
 	unsigned long blocks = 0;
+	int dfd;
 
 	if (lstat(path, &fs) < 0)
 		return -1;
 
 	if (S_ISDIR(fs.st_mode)) {
 		dir = opendir(path);
+		dfd = dirfd(dir);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				fstatat(dirfd(dir), entry->d_name, &fs, 0);
+				fstatat(dfd, entry->d_name, &fs, AT_SYMLINK_NOFOLLOW);
 				blocks += (fs.st_blocks);
 				count_columns(entry, &fs);
 			}
 		}
 		printf("total %lu\n", blocks*512/1024);
-		printf("max_links = %u, max_user = %u, max_group = %u, max_size= %u\n", max_links, max_user, max_group, max_size);
 		rewinddir(dir);
 		while ((entry = readdir(dir)) != NULL) {
 			if (!is_hidden(entry->d_name)) {
-				fstatat(dirfd(dir), entry->d_name, &fs, 0);
-				print_about_file(entry->d_name, &fs);
+				fstatat(dfd, entry->d_name, &fs, AT_SYMLINK_NOFOLLOW);
+				print_about_file(dfd, entry->d_name, &fs);
 			}
 		}
 		closedir(dir);
 	} else {
-		print_about_file(path, &fs);
+		print_about_file(dfd, path, &fs);
 	}
 	return 0;
 }
