@@ -10,11 +10,10 @@
 #include <pwd.h>
 #include <grp.h>
 
-static unsigned max_links = 1;
-static unsigned max_user = 1;
-static unsigned max_group = 1;
-static unsigned max_size = 1;
-
+static unsigned max_links;
+static unsigned max_user;
+static unsigned max_group;
+static unsigned max_size;
 const char month[12][11] = {"янв. ", "фев. ", "марта", "апр. ", "мая  ", "июня ", "июля ", "авг. ", "сент.", "окт. ", "нояб.", "дек. "};
 
 static int is_hidden(char *name)
@@ -82,7 +81,6 @@ static void p_usrown(struct stat *s)
 	struct passwd *pwd = getpwuid(s->st_uid);
 	int l = sprintf(buf, "%s", pwd->pw_name);
 	printf(" %s%*c" , buf, max_user - l + 1, ' ');
-
 }
 
 static void p_grpown(struct stat *s)
@@ -179,6 +177,8 @@ static int ls2(const char *path)
 		}
 		closedir(dir);
 	} else {
+		fstatat(dfd, entry->d_name, &fs, AT_SYMLINK_NOFOLLOW);
+		count_columns(entry, &fs);
 		print_about_file(dfd, path, &fs);
 	}
 	return 0;
@@ -190,13 +190,11 @@ int main(int argc, char **argv)
 	if (argc == 1) {
 		ls2(".");
 	} else {
-		for (i = argc-1; i > 0; i--) {
-			if (-1 == ls2(argv[i])) {
+		for (i = argc-1; i > 0; i--)
+			if (-1 == ls2(argv[i]))
 				printf("%s: cannot access %s:"
 				"No such file or directory\n", \
 				argv[0], argv[i]);
-			}
-		}
 	}
 	return 0;
 }
